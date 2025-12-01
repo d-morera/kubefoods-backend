@@ -1,0 +1,64 @@
+name: KubeFoods CI/CD
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-deploy-validate:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Ensure Minikube is running
+        run: |
+          minikube status || minikube start --driver=docker
+
+      - name: Build Docker image in Minikube
+        run: |
+          eval "$(minikube docker-env)"
+          docker build -t kubefoods-backend:${{ github.sha }} .
+
+      - name: Apply Kubernetes manifests
+        run: |
+          kubectl apply -f deployment.yaml
+          kubectl apply -f service.yaml
+
+      - name: Update deployment image
+        run: |
+          kubectl set image deployment/kubefoods-backend backend=kubefoods-backend:${{ github.sha }}
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/kubefoods-backend --timeout=60s
+
+      - name: Validate service health
+        run: |
+          set -e
+          kubectl delete pod curl-test --ignore-not-found=true >/dev/null 2>&1 || true
+
+          kubectl run curl-test \
+            --restart=Never \
+            --image=curlimages/curl \
+            --command -- sh -c "curl -s -o /dev/null -w \"%{http_code}\" http://kubefoods-service:80" || true
+
+          sleep 5
+
+          STATUS_CODE=$(kubectl logs curl-test 2>/dev/null | tail -n1 || echo "")
+          echo "STATUS_CODE=${STATUS_CODE}"
+
+          kubectl delete pod curl-test --ignore-not-found=true >/dev/null 2>&1 || true
+
+          if [ "$STATUS_CODE" != "200" ]; then
+            echo "Health check failed"
+            exit 1
+          fi
+
+      - name: Rollback deployment on failure
+        if: failure()
+        run: |
+          echo "Rolling back deployment..."
+          kubectl rollout undo deployment/kubefoods-backend
