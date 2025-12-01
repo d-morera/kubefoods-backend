@@ -8,5 +8,5 @@ spec:
     app: kubefoods
   ports:
     - port: 80
-      targetPort: 81 # esto deberia ser 80, lo cambiamos para forzar el error
+      targetPort: 80
       nodePort: 30080
