@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubefoods-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: kubefoods
+  template:
+    metadata:
+      labels:
+        app: kubefoods
+    spec:
+      containers:
+        - name: backend
+          image: nginx:1.25
+          ports:
+            - containerPort: 80
